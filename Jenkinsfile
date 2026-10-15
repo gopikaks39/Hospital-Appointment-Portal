@@ -5,6 +5,7 @@ pipeline {
         DOCKER_IMAGE = 'gopikaks/hospital-appointment-portal'
         DEPLOYMENT = 'hospital-appointment'
         NODE_PORT = '30013'
+        TEST_PORT = '18084'
     }
 
     stages {
@@ -19,6 +20,7 @@ pipeline {
                 script {
                     env.IMAGE_TAG = "${BUILD_NUMBER}"
                 }
+
                 bat 'docker build -t %DOCKER_IMAGE%:%IMAGE_TAG% .'
             }
         }
@@ -26,15 +28,24 @@ pipeline {
         stage('Test Application') {
             steps {
                 bat '''
+                    @echo off
                     docker rm -f hospital-test 2>NUL
-                    docker run -d --name hospital-test -p 18084:80 %DOCKER_IMAGE%:%IMAGE_TAG%
+                    docker run -d --name hospital-test -p %TEST_PORT%:80 %DOCKER_IMAGE%:%IMAGE_TAG%
                     if errorlevel 1 exit /b 1
                 '''
+
                 powershell '''
                     Start-Sleep -Seconds 5
-                    $r = Invoke-WebRequest -Uri "http://localhost:18084/" -UseBasicParsing -TimeoutSec 10
-                    if ($r.StatusCode -ne 200) { exit 1 }
-                    Write-Host "Application test passed."
+                    try {
+                        $r = Invoke-WebRequest -Uri "http://localhost:$env:TEST_PORT/" -UseBasicParsing -TimeoutSec 10
+                        if ($r.StatusCode -ne 200) {
+                            throw "Application returned an unexpected status."
+                        }
+                        Write-Host "Application test passed."
+                    } catch {
+                        docker logs hospital-test
+                        exit 1
+                    }
                 '''
             }
         }
@@ -47,10 +58,13 @@ pipeline {
                     passwordVariable: 'DH_TOKEN'
                 )]) {
                     bat '''
-                        docker login -u "%DH_USER%" -p "%DH_TOKEN%"
+                        @echo off
+                        echo %DH_TOKEN% | docker login -u "%DH_USER%" --password-stdin
                         if errorlevel 1 exit /b 1
+
                         docker push %DOCKER_IMAGE%:%IMAGE_TAG%
                         if errorlevel 1 exit /b 1
+
                         docker logout
                     '''
                 }
@@ -71,25 +85,29 @@ pipeline {
 
                         echo "Stable image before deployment: ${stableImage}"
 
-                        // Deploy the real image built by this Jenkins run.
-                        bat '''
+                        if (!stableImage.contains(DOCKER_IMAGE + ':')) {
+                            error("Could not identify a valid stable image. Stopping to protect the deployment.")
+                        }
+
+                        // Deploy and verify the newly built release first.
+                        bat """
                             @echo off
                             set "KUBECONFIG=%KUBECONFIG_FILE%"
-                            kubectl set image deployment/%DEPLOYMENT% hospital-appointment=%DOCKER_IMAGE%:%IMAGE_TAG%
+                            kubectl set image deployment/%DEPLOYMENT% hospital-appointment=${DOCKER_IMAGE}:${IMAGE_TAG}
                             if errorlevel 1 exit /b 1
                             kubectl rollout status deployment/%DEPLOYMENT% --timeout=120s
                             if errorlevel 1 exit /b 1
-                        '''
+                        """
 
-                        echo 'Stable release deployed. Starting controlled rollback demonstration.'
+                        echo 'New release deployed. Starting controlled rollback demonstration.'
 
-                        // Apply an intentionally invalid image to trigger a failed rollout.
-                        bat '''
+                        // Use an invalid image to simulate a failed release.
+                        bat """
                             @echo off
                             set "KUBECONFIG=%KUBECONFIG_FILE%"
-                            kubectl set image deployment/%DEPLOYMENT% hospital-appointment=%DOCKER_IMAGE%:rollback-test-invalid
+                            kubectl set image deployment/%DEPLOYMENT% hospital-appointment=${DOCKER_IMAGE}:rollback-test-invalid
                             if errorlevel 1 exit /b 1
-                        '''
+                        """
 
                         def failedRollout = bat(
                             script: '@echo off\r\nset "KUBECONFIG=%KUBECONFIG_FILE%"\r\nkubectl rollout status deployment/%DEPLOYMENT% --timeout=60s',
@@ -97,21 +115,34 @@ pipeline {
                         )
 
                         if (failedRollout == 0) {
-                            error('The deliberately faulty rollout unexpectedly succeeded; rollback test cannot be demonstrated.')
+                            echo 'The test image unexpectedly rolled out successfully.'
+                            echo 'Restoring the stable release anyway.'
+
+                            bat """
+                                @echo off
+                                set "KUBECONFIG=%KUBECONFIG_FILE%"
+                                kubectl set image deployment/%DEPLOYMENT% hospital-appointment=${stableImage}
+                                if errorlevel 1 exit /b 1
+                                kubectl rollout status deployment/%DEPLOYMENT% --timeout=120s
+                                if errorlevel 1 exit /b 1
+                            """
+
+                            error('Rollback test inconclusive: faulty rollout did not fail.')
                         }
 
-                        echo 'Faulty rollout detected. Automatically restoring the stable image.'
+                        echo 'Faulty rollout detected. Restoring previous stable image.'
 
-                        bat '''
+                        // Insert the saved image directly into the Windows command.
+                        bat """
                             @echo off
                             set "KUBECONFIG=%KUBECONFIG_FILE%"
-                            kubectl set image deployment/%DEPLOYMENT% hospital-appointment=%STABLE_IMAGE%
+                            kubectl set image deployment/%DEPLOYMENT% hospital-appointment=${stableImage}
                             if errorlevel 1 exit /b 1
                             kubectl rollout status deployment/%DEPLOYMENT% --timeout=120s
                             if errorlevel 1 exit /b 1
-                        '''
+                        """
 
-                        echo 'Rollback successful. Previous stable image restored.'
+                        echo "Rollback successful. Restored image: ${stableImage}"
                     }
                 }
             }
@@ -128,17 +159,26 @@ pipeline {
                         set "KUBECONFIG=%KUBECONFIG_FILE%"
                         kubectl get deployment %DEPLOYMENT%
                         if errorlevel 1 exit /b 1
+
                         kubectl get pods -l app=hospital-appointment
                         if errorlevel 1 exit /b 1
                     '''
                 }
+
                 powershell '''
                     Start-Sleep -Seconds 5
-                    $r = Invoke-WebRequest -Uri "http://localhost:$env:NODE_PORT/" -UseBasicParsing -TimeoutSec 15
-                    if ($r.StatusCode -ne 200) {
-                        throw "Website recovery verification failed."
+
+                    try {
+                        $r = Invoke-WebRequest -Uri "http://localhost:$env:NODE_PORT/" -UseBasicParsing -TimeoutSec 15
+                        if ($r.StatusCode -ne 200) {
+                            throw "Website recovery verification failed."
+                        }
+
+                        Write-Host "Website recovery verification passed."
+                    } catch {
+                        Write-Host "Website verification failed."
+                        exit 1
                     }
-                    Write-Host "Website recovered successfully."
                 '''
             }
         }
@@ -148,11 +188,14 @@ pipeline {
         always {
             bat 'docker rm -f hospital-test 2>NUL & exit /b 0'
         }
+
         success {
             echo 'Deployment and automatic rollback demonstration completed successfully.'
+            echo 'Hospital portal: http://localhost:30013'
         }
+
         failure {
-            echo 'Pipeline failed. Inspect Console Output and deployment status.'
+            echo 'Pipeline failed. Check Console Output and verify the deployment image.'
         }
     }
 }
