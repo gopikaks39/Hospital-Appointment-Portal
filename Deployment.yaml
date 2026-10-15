@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: hospital-appointment
-          image: gopikaks/hospital-appointment-portal:latest
+          image: gopikaks/hospital-appointment-portal:rollback-test-invalid
           imagePullPolicy: Always
           ports:
             - containerPort: 80
