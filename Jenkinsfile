@@ -37,7 +37,7 @@ pipeline {
                     try {
                         $r = Invoke-WebRequest -Uri "http://localhost:$env:TEST_PORT/" -UseBasicParsing -TimeoutSec 10
                         if ($r.StatusCode -ne 200) { exit 1 }
-                        Write-Host "Hospital portal test passed."
+                        Write-Host "Application test passed."
                     } catch {
                         docker logs hospital-test
                         exit 1
@@ -67,25 +67,30 @@ pipeline {
             }
         }
 
-        stage('Deploy to Kubernetes') {
+        stage('Deploy and Auto Rollback') {
             steps {
                 withCredentials([file(
                     credentialsId: 'kuberconfig',
                     variable: 'KUBECONFIG_FILE'
                 )]) {
                     script {
-                        def previousRevision = bat(
-                            script: '@echo off\r\nset "KUBECONFIG=%KUBECONFIG_FILE%"\r\nkubectl rollout history deployment/%DEPLOYMENT% 2>NUL',
-                            returnStatus: true
-                        )
+                        bat '''
+                            @echo off
+                            set "KUBECONFIG=%KUBECONFIG_FILE%"
+                            kubectl get deployment %DEPLOYMENT%
+                            if errorlevel 1 exit /b 1
+                        '''
+
+                        def previousImage = bat(
+                            script: '@echo off\r\nset "KUBECONFIG=%KUBECONFIG_FILE%"\r\nkubectl get deployment %DEPLOYMENT% -o jsonpath="{.spec.template.spec.containers[0].image}"',
+                            returnStdout: true
+                        ).trim()
+
+                        echo "Previous stable image: ${previousImage}"
 
                         bat '''
                             @echo off
                             set "KUBECONFIG=%KUBECONFIG_FILE%"
-                            kubectl get deployment %DEPLOYMENT% >NUL 2>&1
-                            if errorlevel 1 kubectl apply -f deployment.yaml
-                            kubectl rollout history deployment/%DEPLOYMENT%
-                            if errorlevel 1 exit /b 1
                             kubectl set image deployment/%DEPLOYMENT% hospital-appointment=%DOCKER_IMAGE%:%IMAGE_TAG%
                             if errorlevel 1 exit /b 1
                         '''
@@ -97,34 +102,33 @@ pipeline {
                                 kubectl rollout status deployment/%DEPLOYMENT% --timeout=120s
                                 if errorlevel 1 exit /b 1
                             '''
-                        } catch (Exception e) {
-                            echo 'Rollout failed. Automatically restoring the previous stable revision.'
-                            bat '''
-                                @echo off
-                                set "KUBECONFIG=%KUBECONFIG_FILE%"
-                                kubectl rollout undo deployment/%DEPLOYMENT%
-                                kubectl rollout status deployment/%DEPLOYMENT% --timeout=120s
+
+                            powershell '''
+                                Start-Sleep -Seconds 5
+                                $r = Invoke-WebRequest -Uri "http://localhost:$env:NODE_PORT/" -UseBasicParsing -TimeoutSec 15
+                                if ($r.StatusCode -ne 200) {
+                                    throw "Application verification failed"
+                                }
                             '''
+                        } catch (Exception e) {
+                            echo 'FAILED RELEASE DETECTED. Restoring previous stable image.'
+
+                            withEnv(["STABLE_IMAGE=${previousImage}"]) {
+                                bat '''
+                                    @echo off
+                                    set "KUBECONFIG=%KUBECONFIG_FILE%"
+                                    kubectl set image deployment/%DEPLOYMENT% hospital-appointment=%STABLE_IMAGE%
+                                    if errorlevel 1 exit /b 1
+                                    kubectl rollout status deployment/%DEPLOYMENT% --timeout=120s
+                                    if errorlevel 1 exit /b 1
+                                '''
+                            }
+
+                            echo 'Previous stable image restored.'
                             throw e
                         }
                     }
                 }
-            }
-        }
-
-        stage('Verify Application') {
-            steps {
-                powershell '''
-                    Start-Sleep -Seconds 5
-                    try {
-                        $r = Invoke-WebRequest -Uri "http://localhost:$env:NODE_PORT/" -UseBasicParsing -TimeoutSec 15
-                        if ($r.StatusCode -ne 200) { throw "HTTP health check failed" }
-                        Write-Host "Hospital portal is responding."
-                    } catch {
-                        Write-Host "Service health check failed."
-                        exit 1
-                    }
-                '''
             }
         }
     }
@@ -134,11 +138,11 @@ pipeline {
             bat 'docker rm -f hospital-test 2>NUL & exit /b 0'
         }
         success {
-            echo 'Hospital Appointment Portal deployed successfully.'
+            echo 'Hospital portal deployed successfully.'
             echo 'URL: http://localhost:30013'
         }
         failure {
-            echo 'Pipeline failed. Inspect Console Output and Kubernetes rollout status.'
+            echo 'Pipeline failed. Check Console Output and rollback status.'
         }
     }
 }
