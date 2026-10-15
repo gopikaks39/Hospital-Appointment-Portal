@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CarePoint Hospital | Appointment Portal</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Arial, sans-serif; color: #203040; background: #f4f8fb; line-height: 1.6; }
+        header { background: #087f8c; color: white; padding: 20px 7%; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+        header h2 { font-size: 26px; }
+        nav a { color: white; text-decoration: none; margin-left: 18px; font-weight: bold; }
+        .hero { padding: 60px 7%; text-align: center; background: linear-gradient(120deg, #d9f5f1, #e4efff); }
+        .hero h1 { font-size: clamp(30px, 5vw, 44px); color: #075b67; margin-bottom: 12px; }
+        .hero p { font-size: 18px; margin-bottom: 20px; }
+        .button { background: #087f8c; color: white; border: 0; padding: 12px 20px; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-block; font-weight: bold; }
+        section { padding: 42px 7%; }
+        .section-title { text-align: center; margin-bottom: 25px; font-size: 30px; }
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
+        .card { background: white; padding: 22px; border-radius: 12px; box-shadow: 0 3px 12px #10203012; }
+        .doctor-icon { font-size: 45px; }
+        .card h3 { margin: 8px 0; color: #087f8c; }
+        .tag { display: inline-block; background: #e0f5ec; color: #17653e; padding: 4px 9px; border-radius: 15px; font-size: 13px; margin: 8px 0; }
+        .notice { background: #fff4d6; padding: 15px; border-radius: 8px; margin: 10px 0; }
+        .booking { max-width: 650px; margin: auto; background: white; padding: 25px; border-radius: 12px; }
+        label { display: block; margin-top: 12px; font-weight: bold; }
+        input, select { width: 100%; padding: 11px; border: 1px solid #ccd5dd; border-radius: 6px; margin-top: 5px; }
+        .booking button { margin-top: 18px; }
+        #message { margin-top: 15px; font-weight: bold; }
+        footer { background: #203040; color: white; text-align: center; padding: 24px; }
+        @media(max-width: 600px) { header { justify-content: center; } nav a { margin: 0 7px; } }
+    </style>
+</head>
+<body>
+<header>
+    <h2>🏥 CarePoint Hospital</h2>
+    <nav>
+        <a href="#doctors">Doctors</a>
+        <a href="#appointments">Appointments</a>
+        <a href="#announcements">Announcements</a>
+    </nav>
+</header>
+
+<main>
+    <section class="hero">
+        <h1>Care That Puts You First</h1>
+        <p>Meet our specialists and explore available consultation timings.</p>
+        <a class="button" href="#appointments">Book an Appointment</a>
+        <p style="margin-top:15px;font-size:14px;">Portal Release 1.0 | Automated CI/CD Deployment</p>
+    </section>
+
+    <section id="doctors">
+        <h2 class="section-title">Our Medical Specialists</h2>
+        <div class="cards">
+            <article class="card">
+                <div class="doctor-icon">👨‍⚕️</div>
+                <h3>Dr. Arjun Sharma</h3>
+                <p>Cardiology</p>
+                <p>Consultation: 9:00 AM – 1:00 PM</p>
+                <span class="tag">Appointments available</span>
+            </article>
+            <article class="card">
+                <div class="doctor-icon">👩‍⚕️</div>
+                <h3>Dr. Priya Nair</h3>
+                <p>Dermatology</p>
+                <p>Consultation: 10:00 AM – 2:00 PM</p>
+                <span class="tag">Appointments available</span>
+            </article>
+            <article class="card">
+                <div class="doctor-icon">👨‍⚕️</div>
+                <h3>Dr. Rahul Verma</h3>
+                <p>Orthopedics</p>
+                <p>Consultation: 2:00 PM – 6:00 PM</p>
+                <span class="tag">Appointments available</span>
+            </article>
+        </div>
+    </section>
+
+    <section id="appointments">
+        <h2 class="section-title">Request an Appointment</h2>
+        <form class="booking" id="booking-form">
+            <label for="patient">Patient name</label>
+            <input id="patient" required placeholder="Enter your name">
+
+            <label for="specialty">Medical specialization</label>
+            <select id="specialty" required>
+                <option value="">Select specialization</option>
+                <option>Cardiology</option>
+                <option>Dermatology</option>
+                <option>Orthopedics</option>
+            </select>
+
+            <label for="date">Preferred date</label>
+            <input id="date" type="date" required>
+
+            <label for="time">Available time</label>
+            <select id="time" required>
+                <option value="">Select a time</option>
+                <option>09:00 AM</option>
+                <option>10:00 AM</option>
+                <option>11:00 AM</option>
+                <option>02:00 PM</option>
+                <option>03:00 PM</option>
+                <option>04:00 PM</option>
+            </select>
+
+            <button class="button" type="submit">Request Appointment</button>
+            <p id="message" role="status" aria-live="polite"></p>
+            <p style="font-size:13px;color:#667;margin-top:10px;">Demo form only. No appointment is saved or confirmed by a hospital.</p>
+        </form>
+    </section>
+
+    <section id="announcements">
+        <h2 class="section-title">Hospital Announcements</h2>
+        <div class="notice">🩺 General health screening camp — Saturday, 9 AM to 1 PM.</div>
+        <div class="notice">💙 Please arrive 15 minutes before your scheduled consultation.</div>
+        <div class="notice">📢 Emergency services remain available 24 hours a day.</div>
+    </section>
+</main>
+
+<footer>
+    <p><strong>CarePoint Hospital</strong></p>
+    <p>Compassionate care. Trusted specialists.</p>
+    <p>Q3 DevOps Assessment | Docker · Jenkins · Kubernetes</p>
+</footer>
+
+<script>
+    document.getElementById("booking-form").addEventListener("submit", function(event) {
+        event.preventDefault();
+        const patient = document.getElementById("patient").value.trim();
+        const specialty = document.getElementById("specialty").value;
+        const date = document.getElementById("date").value;
+        const time = document.getElementById("time").value;
+        const message = document.getElementById("message");
+
+        if (!patient || !specialty || !date || !time) {
+            message.textContent = "Please complete all fields.";
+            return;
+        }
+
+        message.textContent = "Demo request prepared for " + patient + " — " + specialty + ", " + date + " at " + time + ". This is not a confirmed appointment.";
+    });
+</script>
+</body>
+</html>
